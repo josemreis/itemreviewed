@@ -7,7 +7,7 @@ import dpath.util
 import extruct
 from lxml import html
 from .constants import DATAFEED_URL, PATHS_TO_ITEM_REVIEWED_URL
-from .scraper_utils import scrape
+from .scraper_utils import scrape, translate
 
 
 def _get_claimreview_datacommons_feed(
@@ -49,11 +49,12 @@ def get_itemreviewed_urls(item_reviewed_dict: dict, factcheck_url: str) -> list:
     return list(url_matches)
 
 
-def parse_claimreview(claimreview_dict: str) -> list:
+def parse_claimreview(claimreview_dict: str, translate_claim: bool = False) -> list:
     """
     Fetch the datafeed, parse to item level, and extract the following fields:
         * factcheck_url: item["url"]
         * claim_reviewed: item["claimReviewed"]
+        * review_rating: item["reviewRating"]
         * date_published: item["datePublished"]
         * itemreviewed_urls: get_itemreviewed(item["itemReviewed"])
     """
@@ -62,6 +63,20 @@ def parse_claimreview(claimreview_dict: str) -> list:
     claimreview_parsed["factcheck_url"] = claimreview_dict.get("url")
     # claim reviwed
     claimreview_parsed["claim_reviewed"] = claimreview_dict.get("claimReviewed")
+    if translate_claim:
+        if claimreview_parsed.get("claim_reviewed"):
+            try:
+                claim_translated = translate(claimreview_parsed.get("claim_reviewed"))
+            except Exception as err:
+                claim_translated = None
+                print(
+                    "[!] Error while translating a claim: {}.\n{}.\n Skiping it.".format(
+                        claimreview_parsed.get("claim_reviewed"), err
+                    )
+                )
+            claimreview_parsed["claim_translated"] = claim_translated
+    # review rating dict
+    claimreview_parsed["review_rating"] = claimreview_dict.get("reviewRating")
     # date published
     claimreview_parsed["factcheck_date_published"] = claimreview_dict.get(
         "datePublished"
@@ -89,7 +104,9 @@ def has_claimreview(response: requests.models.Response) -> bool:
     return len(claim_review_script) > 0
 
 
-def get_claimreview_json_ld(response: requests.models.Response, url: str) -> Optional[list]:
+def get_claimreview_json_ld(
+    response: requests.models.Response, url: str
+) -> Optional[list]:
     """Fetch JSON-LD structured data containing claim review."""
     ## parse the json linked data metadata
     metadata = extruct.extract(
@@ -111,7 +128,7 @@ def parse_claim_review_from_url(url: str) -> Optional[dict]:
     # check if the claimReview json+ld script tag is present
     if has_claimreview(response):
         # fetch it
-        claimreview_raw = get_claimreview_json_ld(response = response, url=url)
+        claimreview_raw = get_claimreview_json_ld(response=response, url=url)
         # parse it
         claimreview_parsed = parse_claimreview(claimreview_raw)
         return claimreview_parsed
