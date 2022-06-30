@@ -1,18 +1,18 @@
-from optparse import Option
-from os import link
 import requests
 from io import StringIO
 from typing import Optional, Union
 from requests.exceptions import HTTPError
 import time
 import random
+import domain.utils as du
 from googletrans import Translator
 import translators as ts
 from urllib.parse import unquote, urlparse
 from unshortenit import UnshortenIt
 from lxml import etree
 from newsplease import NewsPlease
-from url_utils import validate_url
+from .url_utils import validate_url
+from .utils import retry_with_backoff
 
 DEFAULT_HEADERS = {
     "User-Agent": "Mozilla/5.0 (Windows NT 10.0; rv:91.0) Gecko/20100101 Firefox/91.0"
@@ -59,7 +59,7 @@ def scrape(
     if lxml_parse:
         return parse_page(response.text)
     else:
-        return response.text
+        return response
 
 
 def parse_page(raw_html: str) -> etree._ElementTree:
@@ -114,7 +114,7 @@ def link_rank(dom: etree._Element, target_url: str) -> Optional[int]:
         return urls.index(target_url)
 
 
-def process_link_element(dom: etree._ElementTree, url: str) -> Optional[dict]:
+def process_link_element(dom: etree._ElementTree, url: str, factcheck_url: str,) -> Optional[dict]:
     """
     Fetch the element containing a specific url along with the following metadata:
         * text (from the parent node, of the href, and suffix, as well as combined)
@@ -129,6 +129,7 @@ def process_link_element(dom: etree._ElementTree, url: str) -> Optional[dict]:
             "link_rank": link_rank(dom, url),
             "number_of_ascestors": position_in_dom(link_elem, count_ascendent=True),
             "number_of_descendants": position_in_dom(link_elem, count_ascendent=False),
+            "is_internal_link": du.get_etld1(factcheck_url) == du.get_etld1(url)
         }
 
 
